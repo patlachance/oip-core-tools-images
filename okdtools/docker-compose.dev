@@ -1,0 +1,26 @@
+version: "3"
+services:
+
+  oiktools-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.$IMG_BASE_OS
+      args:
+        - VCS_REF
+        - CLOUD_SDK_VERSION
+        - DOCKER_MACHINE_VERSION
+        - DOCKER_COMPOSE_VERSION
+    image: $IMG_NS/$IMG_NAME:$IMG_TAG
+    ports:
+      - "8080"
+    deploy:
+      replicas: 1
+      update_config:
+        parallelism: 2
+        delay: 10s
+      restart_policy:
+        condition: on-failure
+
+volumes:
+  data:
+

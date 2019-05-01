@@ -1,0 +1,109 @@
+# This image provides various Open Innovation Platform tools
+FROM oiprnd/okdtools:alpine-latest
+
+ARG BUILD_DATE
+ARG VCS_REF
+ARG CLOUD_SDK_VERSION=243.0.0
+ARG DOCKER_MACHINE_VERSION=v0.16.1
+ARG DOCKER_COMPOSE_VERSION=1.24.0
+
+LABEL org.label-schema.build-date=$BUILD_DATE \
+      org.label-schema.name="Open Innovation Platform Tools image" \
+      org.label-schema.description="This image provides various tools simplifying user experience on the OIP." \
+      org.label-schema.usage="https://github.com/oip-core/oip-core-tools-images/oiptools#VCS_REF" \
+      org.label-schema.schema-version="1.0.0-rc.1" \
+      org.label-schema.vcs-url="https://github.com/oip-core/oip-core-tools-images.git" \
+      org.label-schema.vcs-ref=$VCS_REF \
+      docker.cmd="docker run -it oiprnd/oiptools"
+
+ENV BUILD_DATE=$BUILD_DATE \
+    VCS_REF=$VCS_REF \
+    CLOUD_SDK_VERSION=$CLOUD_SDK_VERSION \
+    DOCKER_MACHINE_VERSION=$DOCKER_MACHINE_VERSION \
+    DOCKER_COMPOSE_VERSION=$DOCKER_COMPOSE_VERSION
+
+USER 0
+
+# Adding docker-machine
+RUN \
+    # Find out latest version available
+    LATEST_VER=$(basename $(dirname $(curl -sL https://github.com/docker/machine/releases/latest | grep -Eo 'href="[^"]+docker-machine-Linux-x86_64' | sed 's/^href="//' | head -1 ))) && \
+    if [ "$LATEST_VER" != "$DOCKER_MACHINE_VERSION" ]; then echo "=> Docker Machine version to be installed: '$DOCKER_MACHINE_VERSION' whereas '$LATEST_VER' is available.";fi && \
+    base=https://github.com/docker/machine/releases/download/$DOCKER_MACHINE_VERSION && \
+    curl -sL $base/docker-machine-$(uname -s)-$(uname -m) >/tmp/docker-machine && \
+    install /tmp/docker-machine /usr/local/bin/docker-machine && \
+    base=https://raw.githubusercontent.com/docker/machine/$DOCKER_MACHINE_VERSION && \
+    for i in docker-machine-prompt.bash docker-machine-wrapper.bash docker-machine.bash; \
+      do wget "$base/contrib/completion/bash/${i}" -P /etc/bash_completion.d; \
+    done
+
+# Install docker-compose
+# https://docs.docker.com/compose/install/
+RUN \
+    # Find out latest version available
+    LATEST_VER=$(basename $(dirname $(curl -sL https://github.com/docker/compose/releases/latest | grep -Eo 'href="[^"]+docker-compose-Linux-x86_64' | sed 's/^href="//' | head -1 ))) && \
+    if [ "$LATEST_VER" != "$DOCKER_COMPOSE_VERSION" ]; then echo "=> Docker Compose version to be installed: '$DOCKER_COMPOSE_VERSION' whereas '$LATEST_VER' is available.";fi && \
+    DOCKER_COMPOSE_URL=https://github.com$(curl -L https://github.com/docker/compose/releases/$DOCKER_COMPOSE_VERSION | grep -Eo 'href="[^"]+docker-compose-Linux-x86_64' | sed 's/^href="//' | head -1) && \
+    # Install version specified
+    curl -sLo /usr/local/bin/docker-compose $DOCKER_COMPOSE_URL && \
+    chmod a+rx /usr/local/bin/docker-compose && \
+    # Adding bash completion \
+    curl -sL https://raw.githubusercontent.com/docker/compose/$DOCKER_COMPOSE_VERSION/contrib/completion/bash/docker-compose -o /etc/bash_completion.d/docker-compose && \
+    # Basic check it works
+    docker-compose version
+
+# Adding AWS cli & auto-completion
+RUN pip3 install awscli && \
+    rm -rf $HOME/.cache/pip && \
+    echo "complete -C '$(type aws_completer)' aws" >> $HOME/.autocomplete.bash
+
+# Adding AWS Logs utility
+RUN pip2 install awslogs && \
+    rm -rf $HOME/.cache/pip
+
+# Adding Google Cloud SDK
+ENV PATH /google-cloud-sdk/bin:$PATH
+RUN apk --no-cache add curl python py-crcmod bash openssh-client \
+                   git gnupg && \
+    curl -sO https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-sdk-${CLOUD_SDK_VERSION}-linux-x86_64.tar.gz && \
+    tar xzf google-cloud-sdk-${CLOUD_SDK_VERSION}-linux-x86_64.tar.gz -C / && \
+    rm google-cloud-sdk-${CLOUD_SDK_VERSION}-linux-x86_64.tar.gz && \
+    ln -s /lib /lib64 && \
+    echo "export PATH=${PATH}:/google-cloud-sdk/bin" >> $HOME/.bashrc && \
+    gcloud config set core/disable_usage_reporting true && \
+    gcloud config set component_manager/disable_update_check true && \
+    gcloud config set metrics/environment github_docker_image && \
+    gcloud --version
+
+# Installing Scaleway CLI
+RUN apk update && \
+    apk add --virtual .build-dependencies gcc go make musl-dev && \
+    go get github.com/scaleway/scaleway-cli/cmd/scw && \
+    rm -rf $GOPATH/src && \
+    rm -rf $HOME/.cache/go-build && \
+    apk del .build-dependencies && \
+    rm -rf /var/cache/apk/* && \
+    curl -sL https://raw.githubusercontent.com/scaleway/scaleway-cli/master/contrib/completion/bash/scw.bash -o /etc/bash_completion.d/scaleway_cli
+
+# Adding Azure CLI & auto-completion
+RUN \
+  apk update && \
+  apk add --virtual=build gcc libffi-dev musl-dev openssl-dev python3-dev make && \
+  pip install azure-cli && \
+  rm -rf $HOME/.cache/pip && \
+  apk del --purge build
+  #azure --completion >> ~/azure.completion.sh && \
+  #echo 'source <(azure --completion)' >> $HOME/.autocomplete.bash
+
+# Adding custom configuration
+COPY assets/ /
+
+# Fix for OpenShift
+RUN chmod g=u /etc/passwd && \
+    chgrp -R 0 $WORKDIR && \
+    chmod -R g=u $HOME $WORKDIR
+ENTRYPOINT ["/entrypoint.sh"]
+#USER 1001
+
+# Run bash by default
+CMD [ "/bin/bash" ]

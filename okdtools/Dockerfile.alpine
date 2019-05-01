@@ -1,0 +1,151 @@
+# This image provides various OKD/OCP/Kubernetes tools
+FROM frolvlad/alpine-glibc:alpine-3.9_glibc-2.28
+
+ARG BUILD_DATE
+ARG VCS_REF
+ARG DOCKER_CLI_VERSION="18.06.3-ce"
+ARG OKD_CLI_REL=v3.11.0
+ARG OKD_CLI_TARBALL=openshift-origin-client-tools-v3.11.0-0cbc58b-linux-64bit.tar.gz
+ARG KUBELESS_REL=v1.0.3
+ARG KOMPOSE_REL=v1.18.0
+ARG WORKDIR=/opt/app/src
+
+LABEL org.label-schema.build-date=$BUILD_DATE \
+      org.label-schema.name="Open Innovation Platform OKD/OCP/Kubernetes Tools image" \
+      org.label-schema.description="This image provides various tools simplifying user experience on the OIP." \
+      org.label-schema.usage="https://github.com/oip-core/oip-core-tools-images/okdtools#VCS_REF" \
+      org.label-schema.schema-version="1.0.0-rc.1" \
+      org.label-schema.vcs-url="https://github.com/oip-core/oip-core-tools-images.git" \
+      org.label-schema.vcs-ref=$VCS_REF \
+      docker.cmd="docker run -it oiprnd/okdtools"
+
+ENV BUILD_DATE=$BUILD_DATE \
+    VCS_REF=$VCS_REF \
+    DOCKER_CLI_URL="https://download.docker.com/linux/static/stable/x86_64/docker-$DOCKER_CLI_VERSION.tgz" \
+    OKD_CLI_REL=$OKD_CLI_REL \
+    OKD_CLI_TARBALL=$OKD_CLI_TARBALL \
+    KUBELESS_REL=$KUBELESS_REL \
+    KOMPOSE_REL=$KOMPOSE_REL \
+    WORKDIR=/opt/app/src \
+    HOME=/root \
+    SHELL=/bin/bash
+
+ENV GOPATH=$WORKDIR/go
+ENV PATH=${PATH}:$GOPATH/bin:/usr/local/bin
+
+# Installing basic dependencies & setting custom shell
+RUN apk add --no-cache bash bash-completion curl git gnupg grep groff jq less \
+            make openssh-client python3 py-crcmod py-pip shadow skopeo wget zsh && \
+    pip install --upgrade pip && \
+    pip3 install --upgrade pip && \
+    rm -rf $HOME/.cache/pip* && \
+    chsh -s /bin/bash root && \
+    wget https://github.com/robbyrussell/oh-my-zsh/raw/master/tools/install.sh -O - | zsh || true && \
+    rm -rf /var/cache/apk/*
+
+WORKDIR $WORKDIR
+
+# Adding Docker client
+RUN mkdir -p /tmp/download && \
+    curl -L $DOCKER_CLI_URL | tar -xz -C /tmp/download && \
+    mv /tmp/download/docker/docker /usr/local/bin/ && \
+    chmod +x /usr/local/bin/ && \
+    mkdir -p /etc/bash_completion.d && \
+    curl https://raw.githubusercontent.com/docker/docker-ce/master/components/cli/contrib/completion/bash/docker -o /etc/bash_completion.d/docker.sh && \
+    rm -rf /tmp/download
+
+# Adding OpenShift client & auto-completion
+RUN curl -LO https://github.com/openshift/origin/releases/download/$OKD_CLI_REL/$OKD_CLI_TARBALL && \
+    tar zxf $OKD_CLI_TARBALL && \
+    OCDIR=${OKD_CLI_TARBALL%.tar.gz} && \
+    mkdir -p /usr/local/bin && \
+    mv $OCDIR/oc /usr/local/bin && \
+    chmod +x /usr/local/bin/oc && \
+    rm -rf $OCDIR $OKD_CLI_TARBALL && \
+    echo 'source <(oc completion bash)' >> $HOME/.autocomplete.bash
+
+# Adding OpenShift ODO client
+RUN curl -L https://github.com/openshift/odo/raw/master/scripts/install.sh | bash && \
+    echo 'complete -C /usr/local/bin/odo odo' >> $HOME/.autocomplete.bash
+
+# Adding Automation Broker & auto-completion
+RUN apk update && \
+    apk add --virtual .build-dependencies gcc go make musl-dev && \
+    go get github.com/automationbroker/apb && \
+    echo "**go get ok**" && \
+    rm -rf $GOPATH/src && \
+    echo "**rm src ok**" && \
+    apk del .build-dependencies && \
+    rm -rf $HOME/.cache/go-build && \
+    rm -rf /var/cache/apk/* && \
+    mkdir -p $HOME/.kube && \
+    touch $HOME/.kube/config && \
+    apb completion bash > /dev/null 2>&1 && \
+    echo 'source <(apb completion bash)' >> $HOME/.autocomplete.bash
+#    apb completion bash > /dev/null 2>&1 && \
+#    echo "**apb completion ok**" && \
+
+# Adding kompose utility
+RUN curl -L https://github.com/kubernetes/kompose/releases/download/$KOMPOSE_REL/kompose-linux-amd64 -o /usr/local/bin/kompose && \
+    chmod +x /usr/local/bin/kompose
+
+# Adding ansible 2.6.15, required for OpenShift 3.11
+RUN pip install ansible==2.6.15 boto3 botocore && \
+    rm -rf $HOME/.cache/pip*
+
+# Adding cekit (ex Concreate), used to build some images
+RUN pip install cekit && \
+    rm -rf $HOME/.cache/pip*
+
+# Adding distgen, required to build RHEL base images
+RUN pip install distgen && \
+    rm -rf $HOME/.cache/pip*
+
+# Adding helm2bundle, used to convert Helm Charts to APB
+WORKDIR $GOPATH/src/github.com/automationbroker
+RUN apk update && \
+    apk add --virtual .build-dependencies gcc go python3-dev musl-dev libffi-dev openssl-dev && \
+    go get github.com/automationbroker/helm2bundle && \
+    rm -rf $GOPATH/src && \
+    rm -rf $HOME/.cache/go-build && \
+    apk del .build-dependencies && \
+    rm -rf /var/cache/apk/*
+
+WORKDIR $WORKDIR
+
+# Adding OpenShift log utility
+RUN git clone https://github.com/RedHatInsights/oclogs && \
+    ( cd oclogs && pip3 install . && cd .. ) && \
+    rm -rf $HOME/.cache/pip* && \
+    rm -rf oclogs
+
+# Adding kubeless cli
+RUN export OS=$(uname -s| tr '[:upper:]' '[:lower:]') && \
+    curl -OL https://github.com/kubeless/kubeless/releases/download/$KUBELESS_REL/kubeless_$OS-amd64.zip && \
+    unzip kubeless_$OS-amd64.zip && \
+    mv bundles/kubeless_$OS-amd64/kubeless /usr/local/bin/ && \
+    rm -rf kubeless_$OS-amd64.zip bundles && \
+    echo 'source <(kubeless completion bash)' >> $HOME/.autocomplete.bash
+
+# Adding serverless.com framework
+RUN apk update && \
+    apk add --no-cache npm && \
+    # npm install -g try-thread-sleep && \
+    npm install serverless -g --ignore-scripts spawn-sync && \
+    rm -rf /var/cache/apk/* && \
+    echo 'source <(/usr/lib/node_modules/serverless/node_modules/tabtab/bin/tabtab install --name serverless --stdout 2> /dev/null)' >> $HOME/.autocomplete.bash && \
+    echo 'source <(/usr/lib/node_modules/serverless/node_modules/tabtab/bin/tabtab install --name slss --stdout 2> /dev/null)' >> $HOME/.autocomplete.bash && \
+    echo 'source <(/usr/lib/node_modules/serverless/node_modules/tabtab/bin/tabtab install --name sls --stdout 2> /dev/null)' >> $HOME/.autocomplete.bash
+
+# Adding custom configuration
+COPY assets/ /
+
+# Run bash by default
+CMD [ "/bin/bash" ]
+
+# Fix for OpenShift
+RUN chmod g=u /etc/passwd && \
+    chgrp -R 0 $WORKDIR && \
+    chmod -R g=u $HOME $WORKDIR
+ENTRYPOINT ["/entrypoint.sh"]
+USER 1001
