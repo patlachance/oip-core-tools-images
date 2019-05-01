@@ -9,7 +9,7 @@ if ! whoami > /dev/null 2>&1; then
 fi
 
 # Loading environment configuration
-if [ -d /home/oipconfig ]; then
+if [ -d /home/oipconfig ] && [ -n "$(ls -A /home/oipconfig)" ]; then
   for f in /home/oipconfig/*; do
     . $f
   done

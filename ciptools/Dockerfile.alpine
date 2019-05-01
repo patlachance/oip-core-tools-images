@@ -4,8 +4,11 @@ FROM oiprnd/okdtools:alpine-latest
 ARG BUILD_DATE
 ARG VCS_REF
 ARG CLOUD_SDK_VERSION=243.0.0
+ARG DOCKER_CLI_VERSION="18.06.3-ce"
 ARG DOCKER_MACHINE_VERSION=v0.16.1
 ARG DOCKER_COMPOSE_VERSION=1.24.0
+ARG KOMPOSE_REL=v1.18.0
+ARG KUBELESS_REL=v1.0.3
 
 LABEL org.label-schema.build-date=$BUILD_DATE \
       org.label-schema.name="Open Innovation Platform Tools image" \
@@ -20,9 +23,22 @@ ENV BUILD_DATE=$BUILD_DATE \
     VCS_REF=$VCS_REF \
     CLOUD_SDK_VERSION=$CLOUD_SDK_VERSION \
     DOCKER_MACHINE_VERSION=$DOCKER_MACHINE_VERSION \
-    DOCKER_COMPOSE_VERSION=$DOCKER_COMPOSE_VERSION
+    DOCKER_COMPOSE_VERSION=$DOCKER_COMPOSE_VERSION \
+    DOCKER_CLI_URL="https://download.docker.com/linux/static/stable/x86_64/docker-$DOCKER_CLI_VERSION.tgz" \
+    KOMPOSE_REL=$KOMPOSE_REL \
+    KUBELESS_REL=$KUBELESS_REL
+
 
 USER 0
+
+# Adding Docker client
+RUN mkdir -p /tmp/download && \
+    curl -L $DOCKER_CLI_URL | tar -xz -C /tmp/download && \
+    mv /tmp/download/docker/docker /usr/local/bin/ && \
+    chmod +x /usr/local/bin/ && \
+    mkdir -p /etc/bash_completion.d && \
+    curl https://raw.githubusercontent.com/docker/docker-ce/master/components/cli/contrib/completion/bash/docker -o /etc/bash_completion.d/docker.sh && \
+    rm -rf /tmp/download
 
 # Adding docker-machine
 RUN \
@@ -51,6 +67,38 @@ RUN \
     curl -sL https://raw.githubusercontent.com/docker/compose/$DOCKER_COMPOSE_VERSION/contrib/completion/bash/docker-compose -o /etc/bash_completion.d/docker-compose && \
     # Basic check it works
     docker-compose version
+
+# Adding kompose utility
+RUN curl -L https://github.com/kubernetes/kompose/releases/download/$KOMPOSE_REL/kompose-linux-amd64 -o /usr/local/bin/kompose && \
+    chmod +x /usr/local/bin/kompose
+
+# Adding helm2bundle, used to convert Helm Charts to APB
+WORKDIR $GOPATH/src/github.com/automationbroker
+RUN apk update && \
+    apk add --virtual .build-dependencies gcc go python3-dev musl-dev libffi-dev openssl-dev && \
+    go get github.com/automationbroker/helm2bundle && \
+    rm -rf $GOPATH/src && \
+    rm -rf $HOME/.cache/go-build && \
+    apk del .build-dependencies && \
+    rm -rf /var/cache/apk/*
+
+# Adding kubeless cli
+RUN export OS=$(uname -s| tr '[:upper:]' '[:lower:]') && \
+    curl -OL https://github.com/kubeless/kubeless/releases/download/$KUBELESS_REL/kubeless_$OS-amd64.zip && \
+    unzip kubeless_$OS-amd64.zip && \
+    mv bundles/kubeless_$OS-amd64/kubeless /usr/local/bin/ && \
+    rm -rf kubeless_$OS-amd64.zip bundles && \
+    echo 'source <(kubeless completion bash)' >> $HOME/.autocomplete.bash
+
+# Adding serverless.com framework
+RUN apk update && \
+    apk add --no-cache npm && \
+    # npm install -g try-thread-sleep && \
+    npm install serverless -g --ignore-scripts spawn-sync && \
+    rm -rf /var/cache/apk/* && \
+    echo 'source <(/usr/lib/node_modules/serverless/node_modules/tabtab/bin/tabtab install --name serverless --stdout 2> /dev/null)' >> $HOME/.autocomplete.bash && \
+    echo 'source <(/usr/lib/node_modules/serverless/node_modules/tabtab/bin/tabtab install --name slss --stdout 2> /dev/null)' >> $HOME/.autocomplete.bash && \
+    echo 'source <(/usr/lib/node_modules/serverless/node_modules/tabtab/bin/tabtab install --name sls --stdout 2> /dev/null)' >> $HOME/.autocomplete.bash
 
 # Adding AWS cli & auto-completion
 RUN pip3 install awscli && \

@@ -31,51 +31,51 @@ Kubernetes and OpenShift related
 -  automation broker: latest
 -  cekit: 3.0.0
 -  dg (distgen): 1.3
--  docker client: 18.06.3-ce
--  helm2bundle: latest
--  kompose: v1.18.0
--  kubeless: v1.0.3
 -  openshift log utility (oclogs): latest
 -  openshift oc client: 3.11
 -  openshift odo client: v1.0.0-beta1 (c226b008)
--  serverless framework: 1.41.1
 
 
 ## ciptools
 
 This image is built from the okdtools image and contains additional tools create or manage other components of the platform and even components and service offerings other than the platform itself.
 
- -  aws cli: latest
- -  aws logs utility: latest
- -  azure client: latest
- -  docker compose: 1.24.0
- -  docker machine: v0.16.1
- -  google cloud sdk (gcloud): 243.0.0
- -  scaleway client: latest
+-  aws cli: latest
+-  aws logs utility: latest
+-  azure client: latest
+-  docker client: 18.06.3-ce
+-  docker compose: 1.24.0
+-  docker machine: v0.16.1
+-  helm2bundle: latest
+-  google cloud sdk (gcloud): 243.0.0
+-  kompose: v1.18.0
+-  kubeless: v1.0.3
+-  scaleway client: latest
+-  serverless framework: 1.41.1
 
 ### 
 
 To run the container with terminal emulation
 
 ```
-$ function oiptools_term () \
+$ function ciptools_term () \
 { \
-    docker run -it --rm -v $HOME/.oipconfig/$OIPENV:/home/oipconfig/ oiprnd/oiptools:alpine-latest $* ; \
+    docker run -it --rm -v $HOME/.oipconfig/$OIPENV:/home/oipconfig/ oiprnd/ciptools:alpine-latest $* ; \
 }
 ```
 
 To run the container without terminal emulation, for example if you need to pipe the output to another command
 
 ```
-$ function oiptools () \
+$ function ciptools () \
 { \
-    docker run -i --rm -v $HOME/.oipconfig/$OIPENV:/home/oipconfig/ oiprnd/oiptools:alpine-latest $* ; \
+    docker run -i --rm -v $HOME/.oipconfig/$OIPENV:/home/oipconfig/ oiprnd/ciptools:alpine-latest $* ; \
 }
 ```
 
 ### Some usefull commands
 
 ```
-$ oiptools awslogs get -GS CloudTrail --start='5m ago' --watch | jq '.'
+$ ciptools awslogs get -GS CloudTrail --start='5m ago' --watch | jq '.'
 ```
 
