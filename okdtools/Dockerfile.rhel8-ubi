@@ -1,0 +1,64 @@
+FROM registry.access.redhat.com/ubi8/ubi:latest
+
+ENV OCREL=v3.11.0 \
+    OCTARBALL=openshift-origin-client-tools-v3.11.0-0cbc58b-linux-64bit.tar.gz \
+    WORKDIR=/opt/app/src
+ENV GOPATH=$WORKDIR/go 
+ENV PATH=${PATH}:$GOPATH/bin
+
+# Installing basic dependencies
+RUN yum -y --setopt=tsflags=nodocs update && \
+    yum -y --setopt=tsflags=nodocs install epel-release && \
+    RPM_PKGS="bash bash-completion curl git golang less make python36 python36-setuptools wget" && \
+    yum -y --setopt=tsflags=nodocs install $RPM_PKGS && \
+    easy_install-3.6 pip && \
+    yum clean all && \
+    rm -rf /var/cache/yum
+
+WORKDIR $WORKDIR
+
+# Adding OpenShift client & auto-completion
+RUN curl -LO https://github.com/openshift/origin/releases/download/$OCREL/$OCTARBALL && \
+    tar zxf $OCTARBALL && \
+    OCDIR=${OCTARBALL%.tar.gz} && \
+    mv $OCDIR/oc /usr/bin && \
+    chmod +x /usr/bin/oc && \
+    rm -rf $OCDIR $OCTARBALL && \
+    echo 'source <(oc completion bash)' >> $HOME/.autocomplete.bash
+
+# Adding Automation Broker & auto-completion
+RUN wget https://copr.fedorainfracloud.org/coprs/g/ansible-service-broker/ansible-service-broker-latest/repo/epel-7/group_ansible-service-broker-ansible-service-broker-latest-epel-7.repo -O /etc/yum.repos.d/ansible-service-broker.repo && \
+    yum -y --setopt=tsflags=nodocs install apb && \
+    echo 'source <(apb completion bash 2>/dev/null)' >> $HOME/.autocomplete.bash
+
+# Adding OpenShift log utility
+RUN git clone https://github.com/RedHatInsights/oclogs && \
+    ( cd oclogs && pip install . && cd .. ) && \
+    rm -rf oclogs
+
+# Adding kompose utility
+RUN curl -L https://github.com/kubernetes/kompose/releases/download/v1.16.0/kompose-linux-amd64 -o /usr/local/bin/kompose && \
+    chmod +x /usr/local/bin/kompose
+
+# Adding cekit (ex Concreate), used to build some images
+RUN (cd /etc/yum.repos.d && curl -LO https://copr.fedorainfracloud.org/coprs/g/cekit/cekit/repo/epel-7/group_cekit-cekit-epel-7.repo ) && \
+    yum -y --setopt=tsflags=nodocs install cekit-bash-completion python2-cekit && \
+    yum clean all && \
+    rm -rf /var/cache/yum
+
+# Adding distgen, required to build RHEL base images
+RUN pip install distgen
+
+# Adding helm2bundle, used to convert Helm Charts to APB
+WORKDIR $GOPATH/src/github.com/automationbroker
+RUN git clone https://github.com/automationbroker/helm2bundle.git && \
+    cd helm2bundle && \
+    go get
+
+WORKDIR $WORKDIR
+
+# Adding custom configuration
+COPY assets/home/ /root/
+
+# Run bash by default
+CMD [ "/bin/bash" ]
